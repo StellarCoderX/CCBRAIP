@@ -156,7 +156,7 @@ async function testarCartao(cardLine, proxy = null) {
     // ACESSO AO CHECKOUT
     await page.goto(
       "https://ev.braip.com/checkout/pla2gpqx/che8pwe8?af=afi9e5lyz5&currency=BRL&pv=pro22kk9",
-      { waitUntil: "domcontentloaded", timeout: 60000 }
+      { waitUntil: "networkidle2" }
     );
 
     await page.type("#nome", dadosPessoa.nomeCompleto, { delay: 40 });
@@ -253,3 +253,4 @@ app.get("/cc", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
+
