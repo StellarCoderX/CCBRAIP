@@ -113,7 +113,7 @@ async function testarCartao(cardLine) {
   try {
     // As flags '--no-sandbox' e '--disable-setuid-sandbox' são essenciais para rodar em ambientes de contêiner (como no Railway)
     browser = await puppeteer.launch({
-      headless: false,
+      headless: 'new',
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
@@ -228,3 +228,4 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
   console.log("Aguardando requisições na rota /cc?lista=...");
 });
+
