@@ -1,9 +1,17 @@
 const express = require("express");
-// MUDANÇA: Usando importação explícita
 const puppeteer = require("puppeteer-extra").addExtra(require("puppeteer"));
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 const fs = require("fs");
+// ADICIONE ESTA LINHA PARA IMPORTAR O CORS
+const cors = require("cors");
 
+const app = express();
+
+// ADICIONE ESTA LINHA PARA HABILITAR O CORS
+// Ela deve vir ANTES da definição das suas rotas (app.get, app.post, etc.)
+app.use(cors());
+
+app.use(express.json());
 // Adiciona o plugin de stealth ao puppeteer
 puppeteer.use(StealthPlugin());
 
@@ -253,4 +261,5 @@ app.get("/cc", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
+
 
