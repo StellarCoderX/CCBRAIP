@@ -109,7 +109,7 @@ async function testarCartao(cardLine, proxy = null) {
   try {
     // CONFIGURAÇÃO DE PROXY
     let launchOptions = {
-      headless: false,
+      headless: "new",
       args: [
         "--no-sandbox",
         "--disable-setuid-sandbox",
@@ -253,3 +253,4 @@ app.get("/cc", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
+
