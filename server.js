@@ -160,10 +160,10 @@ async function testarCartao(cardLine, proxy = null) {
 
 
     await page.type("#nome", dadosPessoa.nomeCompleto, { delay: 40 });
-    await page.type("#email", email, { delay: 30 });
+    await page.type("#email", email, { delay: 35 });
     await page.type("#confirmacao_email", email, { delay: 30 });
-    await page.type("#documento", cpf, { delay: 30 });
-    await page.type("#celular", telefone, { delay: 20 });
+    await page.type("#documento", cpf, { delay: 38 });
+    await page.type("#celular", telefone, { delay: 28 });
     await page.type(
       'input[placeholder="Digite somente números do cartão"]',
       cardNumber,
@@ -174,8 +174,8 @@ async function testarCartao(cardLine, proxy = null) {
       dadosPessoa.nomeCompleto,
       { delay: 70 }
     );
-    await page.type('input[name="credito_mes"]', month, { delay: 20 });
-    await page.type('input[name="credito_ano"]', year, { delay: 20 });
+    await page.type('input[name="credito_mes"]', month, { delay: 48 });
+    await page.type('input[name="credito_ano"]', year, { delay: 36 });
     await page.type('input[name="credito_cvc"]', cvv, { delay: 20 });
 
     await page.click("#submit");
@@ -254,6 +254,7 @@ app.get("/cc", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
+
 
 
 
