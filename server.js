@@ -154,13 +154,14 @@ async function testarCartao(cardLine, proxy = null) {
     });
 
     await page.goto(
-  "https://ev.braip.com/checkout/pla2gpqx/che8pwe8?af=afi9e5lyz5&currency=BRL&pv=pro22kk9",
+  "https://ev.braip.com/checkout/pla648qo/che6p8m1?currency=BRL",
   { waitUntil: "load" }
 );
 
 
     await page.type("#nome", dadosPessoa.nomeCompleto, { delay: 40 });
     await page.type("#email", email, { delay: 30 });
+    await page.type("#confirmacao_email", email, { delay: 30 });
     await page.type("#documento", cpf, { delay: 30 });
     await page.type("#celular", telefone, { delay: 20 });
     await page.type(
@@ -253,5 +254,6 @@ app.get("/cc", async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });
+
 
 
